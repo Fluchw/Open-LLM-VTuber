@@ -23,37 +23,30 @@ class DeepLXConfig(I18nMixin):
     }
 
 
-class TenCentConfig(I18nMixin):
+class TencentConfig(I18nMixin):
     """Configuration for tencent translation service."""
 
     secret_id: str = Field(..., description="Tencent Secret ID")
     secret_key: str = Field(..., description="Tencent Secret Key")
     region: str = Field(..., description="Region for Tencent Service")
-    source_lang: str = Field(..., description="Source language code for tencent translation")
-    target_lang: str = Field(..., description="Target language code for tencent translation")
+    source_lang: str = Field(
+        ..., description="Source language code for tencent translation"
+    )
+    target_lang: str = Field(
+        ..., description="Target language code for tencent translation"
+    )
 
     DESCRIPTIONS: ClassVar[Dict[str, Description]] = {
-        "secret_id": Description(
-            en="Tencent Secret ID",
-            zh="腾讯服务的Secret ID"
-        ),
-        "secret_key": Description(
-            en="Tencent Secret Key",
-            zh="腾讯服务的Secret Key"
-        ),
-        "region": Description(
-            en="Region for Tencent Service",
-            zh="腾讯服务使用的区域"
-        ),
+        "secret_id": Description(en="Tencent Secret ID", zh="腾讯服务的Secret ID"),
+        "secret_key": Description(en="Tencent Secret Key", zh="腾讯服务的Secret Key"),
+        "region": Description(en="Region for Tencent Service", zh="腾讯服务使用的区域"),
         "source_lang": Description(
-            en="Source language code for tencent translation",
-            zh="腾讯翻译的源语言代码"
+            en="Source language code for tencent translation", zh="腾讯翻译的源语言代码"
         ),
         "target_lang": Description(
             en="Target language code for tencent translation",
-            zh="腾讯翻译的目标语言代码"
+            zh="腾讯翻译的目标语言代码",
         ),
-
     }
 
 
@@ -64,9 +57,11 @@ class TranslatorConfig(I18nMixin):
     """Configuration for translation services."""
 
     translate_audio: bool = Field(..., alias="translate_audio")
-    translate_provider: Literal["deeplx","tencent"] = Field(..., alias="translate_provider")
+    translate_provider: Literal["deeplx", "tencent"] = Field(
+        ..., alias="translate_provider"
+    )
     deeplx: Optional[DeepLXConfig] = Field(None, alias="deeplx")
-    tencent: Optional[TenCentConfig] = Field(None, alias="tencent")
+    tencent: Optional[TencentConfig] = Field(None, alias="tencent")
 
     DESCRIPTIONS: ClassVar[Dict[str, Description]] = {
         "translate_audio": Description(

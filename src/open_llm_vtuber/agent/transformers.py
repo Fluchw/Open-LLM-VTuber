@@ -1,11 +1,11 @@
 from typing import AsyncIterator, Tuple, Callable, List
 from functools import wraps
 from .output_types import Actions, SentenceOutput
-from ..utils.tts_preprocessor import tts_filter as filter_text
 from ..live2d_model import Live2dModel
-from ..utils.sentence_divider import SentenceDivider
 from ..config_manager import TTSPreprocessorConfig
+from ..utils.sentence_divider import SentenceDivider
 from ..utils.sentence_divider import SentenceWithTags, TagState
+from ..utils.tts_preprocessor import tts_filter as filter_text
 from loguru import logger
 
 
@@ -102,7 +102,9 @@ def display_processor():
     return decorator
 
 
-def tts_filter(tts_preprocessor_config: TTSPreprocessorConfig = None):
+def tts_filter(
+    tts_preprocessor_config: TTSPreprocessorConfig = None,
+):
     """
     Decorator that filters text for TTS.
     Skips TTS for think tag content.
@@ -128,7 +130,6 @@ def tts_filter(tts_preprocessor_config: TTSPreprocessorConfig = None):
                         ignore_parentheses=config.ignore_parentheses,
                         ignore_asterisks=config.ignore_asterisks,
                         ignore_angle_brackets=config.ignore_angle_brackets,
-                        translator=None,
                     )
 
                 logger.debug(f"display: {display}")

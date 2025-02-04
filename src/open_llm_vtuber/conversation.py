@@ -32,13 +32,13 @@ class TTSTaskManager:
         self.next_index_to_play = 0
 
     async def speak(
-            self,
-            tts_text: str,
-            live2d_model: Live2dModel,
-            tts_engine: TTSInterface,
-            websocket_send: WebSocket.send,
-            display_text: str | None = None,
-            actions: Actions | None = None,
+        self,
+        tts_text: str,
+        live2d_model: Live2dModel,
+        tts_engine: TTSInterface,
+        websocket_send: WebSocket.send,
+        display_text: str | None = None,
+        actions: Actions | None = None,
     ) -> None:
         """
         Generate and send audio for a sentence. If tts_text is empty,
@@ -189,18 +189,18 @@ async def conversation_chain(
 
         logger.debug(f"🏃 tts_engine.__dict__ '''{tts_engine.__dict__}'''...")
 
-
         async for output in agent_output:
             if isinstance(output, SentenceOutput):
                 async for display_text, tts_text, actions in output:
                     logger.debug(f"🏃 output '''{output}'''...")
-                    if hasattr(tts_engine, "text_lang"):
-                        if tts_engine.text_lang == 'ja':
-                            logger.debug(f"🏃 tts_engine 文本语音类型为 ja '''{tts_engine.__dict__}'''...")
-                            tts_text = translate_engine.translate(tts_text)
-                            logger.debug(f"🏃 翻译后文本 '''{tts_text}'''...")
 
-
+                    if translate_engine:
+                        tts_text = translate_engine.translate(tts_text)
+                        logger.info(f"🏃 Text after translation '''{tts_text}'''...")
+                    else:
+                        logger.info(
+                            "🚫 No translation engine available. Skipping translation."
+                        )
                     full_response += display_text
                     await tts_manager.speak(
                         tts_text=tts_text,

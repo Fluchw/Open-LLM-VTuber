@@ -120,40 +120,44 @@ def download_and_extract(url: str, output_dir: str) -> Path:
 
 def check_and_extract_local_file(url: str, output_dir: str) -> Path | None:
     """
-    新增方法：检查本地是否已存在压缩包，存在则直接解压
+    Check if a local file exists and extract it if it is a tar.bz2 archive.
 
     Args:
-        url (str): 原始下载URL（用于解析文件名）
-        output_dir (str): 模型存储目录
+        url (str): The URL of the file.
+        output_dir (str): The directory to save the extracted files.
 
     Returns:
-        Path | None: 若存在压缩包并解压成功返回路径，否则返回None
+        Path | None: Path to the extracted directory if it's a tar.bz2 file,
+            otherwise None.
     """
-    # 从URL解析文件名
+    # Get the file name from the URL
     file_name = url.split("/")[-1]
     compressed_path = Path(output_dir) / file_name
 
-    # 如果压缩包存在且是tar.bz2格式
-    if compressed_path.exists() and file_name.endswith(".tar.bz2"):
-        logger.info(f"🔍 发现本地压缩包: {compressed_path}")
-        extracted_dir = compressed_path.parent / file_name.replace(".tar.bz2", "")
+    # Check if the compressed file exists and is a tar.bz2 archive
+    extracted_dir = Path(output_dir) / file_name.replace(".tar.bz2", "")
 
-        if extracted_dir.exists():
-            logger.info(f"✅ 解压目录已存在: {extracted_dir}，无需操作")
-            return extracted_dir
+    if extracted_dir.exists():
+        logger.info(
+            f"✅ Extracted directory exists: {extracted_dir}, no operation needed."
+        )
+        return extracted_dir
+
+    if compressed_path.exists() and file_name.endswith(".tar.bz2"):
+        logger.info(f"🔍 Found local archive file: {compressed_path}")
 
         try:
-            logger.info("⏳ 正在解压本地文件...")
+            logger.info("⏳ Extracting archive file...")
             with tarfile.open(compressed_path, "r:bz2") as tar:
                 tar.extractall(path=output_dir)
-            logger.success(f"解压完成至: {extracted_dir}")
-            os.remove(compressed_path)  # 解压后删除压缩包
+            logger.success(f"Extracted archive to the path: {extracted_dir}")
+            os.remove(compressed_path)  # Remove the compressed file
             return extracted_dir
         except Exception as e:
-            logger.error(f"解压失败: {str(e)}")
+            logger.error(f"Fail to extract file: {str(e)}")
             return None
 
-    # 如果压缩包不存在或格式不符
+    logger.warning(f"Local file not found or not a tar.bz2 archive: {compressed_path}")
     return None
 
 

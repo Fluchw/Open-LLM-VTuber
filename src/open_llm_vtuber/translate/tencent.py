@@ -16,14 +16,15 @@ def sign(key, msg):
 
 
 class TencentTranslate(TranslateInterface):
-    def __init__(self,
-                 secret_id: str,
-                 secret_key: str,
-                 token: str = "",
-                 region: str = "ap-guangzhou",
-                 source_lang: str = "zh",
-                 target_lang: str = "ja",
-                 ):
+    def __init__(
+        self,
+        secret_id: str,
+        secret_key: str,
+        token: str = "",
+        region: str = "ap-guangzhou",
+        source_lang: str = "zh",
+        target_lang: str = "ja",
+    ):
         self.secret_id = secret_id
         self.secret_key = secret_key
         self.token = token
@@ -48,18 +49,32 @@ class TencentTranslate(TranslateInterface):
         ct = "application/json; charset=utf-8"
         canonical_uri = "/"
         canonical_querystring = ""
-        canonical_headers = f"content-type:{ct}\nhost:{self.host}\nx-tc-action:{self.action.lower()}\n"
+        canonical_headers = (
+            f"content-type:{ct}\nhost:{self.host}\nx-tc-action:{self.action.lower()}\n"
+        )
         signed_headers = "content-type;host;x-tc-action"
         hashed_request_payload = hashlib.sha256(payload.encode("utf-8")).hexdigest()
         canonical_request = "\n".join(
-            ["POST", canonical_uri, canonical_querystring, canonical_headers, signed_headers, hashed_request_payload])
+            [
+                "POST",
+                canonical_uri,
+                canonical_querystring,
+                canonical_headers,
+                signed_headers,
+                hashed_request_payload,
+            ]
+        )
 
         credential_scope = f"{date}/{self.service}/tc3_request"
-        hashed_canonical_request = hashlib.sha256(canonical_request.encode("utf-8")).hexdigest()
+        hashed_canonical_request = hashlib.sha256(
+            canonical_request.encode("utf-8")
+        ).hexdigest()
         string_to_sign = f"{self.algorithm}\n{timestamp}\n{credential_scope}\n{hashed_canonical_request}"
 
         secret_signing = self.create_signature(date, self.service)
-        signature = hmac.new(secret_signing, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+        signature = hmac.new(
+            secret_signing, string_to_sign.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
 
         authorization = f"{self.algorithm} Credential={self.secret_id}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}"
 
@@ -69,7 +84,7 @@ class TencentTranslate(TranslateInterface):
             "Host": self.host,
             "X-TC-Action": self.action,
             "X-TC-Timestamp": str(timestamp),
-            "X-TC-Version": self.version
+            "X-TC-Version": self.version,
         }
         if self.region:
             headers["X-TC-Region"] = self.region
@@ -83,20 +98,24 @@ class TencentTranslate(TranslateInterface):
         timestamp = int(time.time())
         date = datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d")
 
-        payload = json.dumps({
-            "SourceText": text,
-            "Source": self.source_lang,
-            "Target": self.target_lang,
-            "ProjectId": 0
-        })
+        payload = json.dumps(
+            {
+                "SourceText": text,
+                "Source": self.source_lang,
+                "Target": self.target_lang,
+                "ProjectId": 0,
+            }
+        )
 
         headers = self._prepare_headers(payload, timestamp, date)
 
         try:
-            response = httpx.post(url="https://" + self.host, headers=headers, data=payload)
+            response = httpx.post(
+                url="https://" + self.host, headers=headers, data=payload
+            )
             res = response.json()
             logger.info(f"请求成功: {res}")
-            return res.get('Response', {}).get('TargetText', '翻译失败')
+            return res.get("Response", {}).get("TargetText", "翻译失败")
         except Exception as e:
             logger.critical(f"调用API出错: {e}")
             raise e
@@ -105,9 +124,7 @@ class TencentTranslate(TranslateInterface):
 # 测试脚本
 def main():
     translator = TencentTranslate(
-        secret_id="secret_id",
-        secret_key="secret_key",
-        region="ap-guangzhou"
+        secret_id="secret_id", secret_key="secret_key", region="ap-guangzhou"
     )
     try:
         result = translator.translate(text="Hello, world!")

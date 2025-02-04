@@ -137,6 +137,7 @@ def _filter_nested(text: str, left: str, right: str) -> str:
     filtered_text = re.sub(r"\s+", " ", filtered_text).strip()
     return filtered_text
 
+
 def filter_brackets(text: str) -> str:
     """
     Filter text to remove all text within brackets, handling nested cases.
@@ -147,7 +148,8 @@ def filter_brackets(text: str) -> str:
     Returns:
         str: The filtered text.
     """
-    return _filter_nested(text, '[', ']')
+    return _filter_nested(text, "[", "]")
+
 
 def filter_parentheses(text: str) -> str:
     """
@@ -159,7 +161,8 @@ def filter_parentheses(text: str) -> str:
     Returns:
         str: The filtered text.
     """
-    return _filter_nested(text, '(', ')')
+    return _filter_nested(text, "(", ")")
+
 
 def filter_angle_brackets(text: str) -> str:
     """
@@ -171,7 +174,8 @@ def filter_angle_brackets(text: str) -> str:
     Returns:
         str: The filtered text.
     """
-    return _filter_nested(text, '<', '>')
+    return _filter_nested(text, "<", ">")
+
 
 def filter_asterisks(text):
     """
