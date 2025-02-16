@@ -38,9 +38,7 @@ async def websocket_client():
             logger.info("WebSocket客户端连接已建立")
             while True:
                 message = await websocket.recv()
-                msg = json.loads(message)
-                if msg['type'] != 'audio':
-                    logger.info(f"客户端收到消息: {msg}")
+                logger.info(f"客户端收到消息: {message}")
     except Exception as e:
         logger.error(f"WebSocket客户端错误: {e}")
 
@@ -59,7 +57,6 @@ async def broadcast_client():
                 }
                 # 发送消息
                 await websocket.send(json.dumps(message))
-                logger.info(f"广播状态: 已发送 {json.dumps(message)}")
                 # 接收状态回执
                 response = await websocket.recv()
                 logger.info(f"广播状态: {response}")

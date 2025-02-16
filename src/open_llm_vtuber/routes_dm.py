@@ -286,9 +286,34 @@ def create_routes(default_context_cache: ServiceContext, connected_clients: list
         finally:
             await processor_task
 
-    @router.post("/broadcast")
-    async def broadcast_message(message: dict):
-        await message_queue.put(message)
-        return {"status": "success", "message": "Message queued for broadcast"}
+    @router.websocket("/broadcast-ws")
+    async def broadcast_websocket(websocket: WebSocket):
+        """广播消息的WebSocket接口"""
+        await websocket.accept()
+        logger.info("Broadcast WebSocket connection established")
+
+        try:
+            while True:
+                # 接收广播消息
+                message = await websocket.receive_text()
+                data = json.loads(message)
+                
+                # 发送队列状态回执
+                status = {
+                    "queue_size": message_queue.qsize(),
+                    "is_processing": state.conversation_task is not None,
+                    "message": "Message queued for broadcast",
+                    "status": "success"
+                }
+                await websocket.send_text(json.dumps(status))
+                
+                # 将消息放入队列
+                await message_queue.put(data)
+                
+        except WebSocketDisconnect:
+            logger.info("Broadcast WebSocket disconnected")
+        except Exception as e:
+            logger.error(f"Error in broadcast websocket: {e}")
+            await websocket.close()
 
     return router
