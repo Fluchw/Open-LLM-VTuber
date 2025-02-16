@@ -1,4 +1,5 @@
 import asyncio
+import traceback
 import websockets
 import json
 import logging
@@ -48,7 +49,7 @@ async def websocket_client():
                 # 放入队列供 broadcast_client 处理
                     await message_queue.put(msg)
     except Exception as e:
-        logger.error(f"WebSocket客户端错误: {e}")
+        logger.error(f"WebSocket客户端错误: {e}\n{traceback.format_exc()}")
 
 async def broadcast_client():
     """模拟一个广播消息的WebSocket客户端"""
@@ -59,23 +60,36 @@ async def broadcast_client():
             msg_list = ['你好啊', '你在做什么呢', '你中午吃了什么', '你要和我去游乐园玩吗']
             i = 0
             while True:
-                received_message = await message_queue.get()  # 从队列获取消息
-                logger.info(f"广播端收到: {received_message}")
+
                 message = {
                     "type": "text-input",
                     "text": msg_list[i % len(msg_list)]
                 }
                 # 发送消息
                 await websocket.send(json.dumps(message))
+                # 确认发送,必须有,不如会出bug,不知道为啥
+                await websocket.send(json.dumps(message))
                 logger.info(f"广播发送: {message}")
                 # 接收状态回执
                 response = await websocket.recv()
                 logger.info(f"广播状态: {response}")
-                
-                await asyncio.sleep(15)  # 等待15秒发送下一条
+
+                # {'type': 'control', 'text': 'conversation-chain-end'}
+                while True:
+                    if message_queue.empty():
+                        logger.info(f"广播端队列空")
+                        await asyncio.sleep(1)
+                        continue
+                    received_message = await message_queue.get()  # 从队列获取消息
+                    logger.info(f"广播端收到: {received_message}")
+
+                    if received_message['type'] == 'control' and received_message['text'] == 'conversation-chain-end':
+                        await asyncio.sleep(5)
+                        break
+                # await asyncio.sleep(30)  # 等待15秒发送下一条
                 i += 1
     except Exception as e:
-        logger.error(f"广播客户端错误: {e}")
+        logger.error(f"WebSocket客户端错误: {e}\n{traceback.format_exc()}")
 
 async def main():
     """主函数：同时运行接收客户端和广播客户端"""
