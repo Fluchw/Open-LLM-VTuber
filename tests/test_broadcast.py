@@ -30,15 +30,23 @@ logger.setLevel(logging.INFO)
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
+# 消息队列（共享消息）
+message_queue = asyncio.Queue()
+
 async def websocket_client():
-    """模拟一个接收消息的WebSocket客户端"""
+    """监听 WebSocket 消息，并将消息放入队列"""
     uri = "ws://localhost:12393/client-ws"
     try:
         async with websockets.connect(uri) as websocket:
             logger.info("WebSocket客户端连接已建立")
             while True:
                 message = await websocket.recv()
-                logger.info(f"客户端收到消息: {message}")
+                msg = json.loads(message)
+                if msg['type'] != 'audio':
+                    logger.info(f"客户端收到消息: {msg}")
+
+                # 放入队列供 broadcast_client 处理
+                    await message_queue.put(msg)
     except Exception as e:
         logger.error(f"WebSocket客户端错误: {e}")
 
@@ -51,12 +59,15 @@ async def broadcast_client():
             msg_list = ['你好啊', '你在做什么呢', '你中午吃了什么', '你要和我去游乐园玩吗']
             i = 0
             while True:
+                received_message = await message_queue.get()  # 从队列获取消息
+                logger.info(f"广播端收到: {received_message}")
                 message = {
                     "type": "text-input",
                     "text": msg_list[i % len(msg_list)]
                 }
                 # 发送消息
                 await websocket.send(json.dumps(message))
+                logger.info(f"广播发送: {message}")
                 # 接收状态回执
                 response = await websocket.recv()
                 logger.info(f"广播状态: {response}")
