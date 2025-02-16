@@ -9,7 +9,6 @@
 [![CodeQL](https://github.com/Open-LLM-VTuber/Open-LLM-VTuber/actions/workflows/codeql.yml/badge.svg)](https://github.com/Open-LLM-VTuber/Open-LLM-VTuber/actions/workflows/codeql.yml)
 [![Ruff](https://github.com/Open-LLM-VTuber/Open-LLM-VTuber/actions/workflows/ruff.yml/badge.svg)](https://github.com/Open-LLM-VTuber/Open-LLM-VTuber/actions/workflows/ruff.yml)
 [![Docker](https://img.shields.io/badge/t41372%2FOpen--LLM--VTuber-%25230db7ed.svg?logo=docker&logoColor=blue&labelColor=white&color=blue)](https://hub.docker.com/r/t41372/open-llm-vtuber) 
-[![Roadmap](https://img.shields.io/badge/项目路线图-GitHub_Project-blue)](https://github.com/users/t41372/projects/1/views/5)
 [![QQ群](https://img.shields.io/badge/QQ群-792615362-white?style=flat&logo=qq&logoColor=white)](https://qm.qq.com/q/ngvNUQpuKI)
 [![QQ频道](https://img.shields.io/badge/QQ频道(开发)-pd93364606-white?style=flat&logo=qq&logoColor=white)](https://pd.qq.com/s/tt54r3bu)
 
@@ -18,7 +17,7 @@
 
 [英文 README](https://github.com/t41372/Open-LLM-VTuber/blob/main/README.md) | 中文 README
 
-[使用文档](https://open-llm-vtuber.github.io/docs/quick-start)
+[使用文档](https://open-llm-vtuber.github.io/docs/quick-start) | | [![项目路线图](https://img.shields.io/badge/项目路线图-GitHub_Project-yellow)](https://github.com/orgs/Open-LLM-VTuber/projects/2)
 
 </h3>
 
