@@ -49,6 +49,7 @@ def prepare_audio_payload(
             "audio": None,
             "volumes": [],
             "slice_length": chunk_length_ms,
+            "duration_ms": 0,
             "text": display_text,
             "actions": actions.to_dict() if actions else None,
         }
@@ -56,6 +57,7 @@ def prepare_audio_payload(
     try:
         audio = AudioSegment.from_file(audio_path)
         audio_bytes = audio.export(format="wav").read()
+        duration_ms = len(audio) 
     except Exception as e:
         raise ValueError(
             f"Error loading or converting generated audio file to wav file '{audio_path}': {e}"
@@ -68,6 +70,7 @@ def prepare_audio_payload(
         "audio": audio_base64,
         "volumes": volumes,
         "slice_length": chunk_length_ms,
+        "duration_ms": duration_ms,
         "text": display_text,
         "actions": actions.to_dict() if actions else None,
     }

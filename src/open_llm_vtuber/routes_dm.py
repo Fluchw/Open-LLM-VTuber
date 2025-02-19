@@ -23,14 +23,42 @@ from .chat_history_manager import (
 def create_routes(default_context_cache: ServiceContext, connected_clients: list, message_queue: asyncio.Queue):
     router = APIRouter()
     
-    # 创建一个类来存储共享变量
     class SharedState:
         def __init__(self):
             self.history_uid = None
             self.conversation_task = None
             self.data_buffer = np.array([])
+            self.broadcast_websockets = set()  # 添加广播客户端集合
     
     state = SharedState()
+
+    async def broadcast_message(message: str):
+        """向所有连接的客户端广播消息"""
+        disconnected = set()
+        for ws in state.broadcast_websockets:
+            try:
+                logger.debug(f"Broadcasting message to client: {message}")
+                await ws.send_text(message)
+            except WebSocketDisconnect:
+                disconnected.add(ws)
+            except Exception as e:
+                logger.error(f"Error broadcasting to client: {e}")
+                disconnected.add(ws)
+        
+        # 移除断开连接的客户端
+        state.broadcast_websockets.difference_update(disconnected)
+
+    async def send_with_broadcast(websocket: WebSocket, message: str):
+        """发送消息到主客户端并广播"""
+        await websocket.send_text(message)
+        await broadcast_message(message)
+
+    # 添加这个包装函数
+    def make_broadcast_send(websocket: WebSocket):
+        """创建一个包装了send_with_broadcast的函数"""
+        async def wrapped_send(message: str):
+            await send_with_broadcast(websocket, message)
+        return wrapped_send
 
     async def process_message(data: dict, websocket: WebSocket, session_service_context: ServiceContext):
         """处理单个消息的函数"""
@@ -50,8 +78,8 @@ def create_routes(default_context_cache: ServiceContext, connected_clients: list
             histories = get_history_list(
                 session_service_context.character_config.conf_uid
             )
-            await websocket.send_text(
-                json.dumps({"type": "history-list", "histories": histories})
+            await send_with_broadcast(
+                websocket, json.dumps({"type": "history-list", "histories": histories})
             )
 
         elif data.get("type") == "fetch-and-set-history":
@@ -70,8 +98,8 @@ def create_routes(default_context_cache: ServiceContext, connected_clients: list
                     )
                     if msg["role"] != "system"
                 ]
-                await websocket.send_text(
-                    json.dumps({"type": "history-data", "messages": messages})
+                await send_with_broadcast(
+                    websocket, json.dumps({"type": "history-data", "messages": messages})
                 )
 
         elif data.get("type") == "create-new-history":
@@ -82,7 +110,8 @@ def create_routes(default_context_cache: ServiceContext, connected_clients: list
                 conf_uid=session_service_context.character_config.conf_uid,
                 history_uid=state.history_uid,
             )
-            await websocket.send_text(
+            await send_with_broadcast(
+                websocket,
                 json.dumps(
                     {
                         "type": "new-history-created",
@@ -98,7 +127,8 @@ def create_routes(default_context_cache: ServiceContext, connected_clients: list
                     session_service_context.character_config.conf_uid,
                     history_uid,
                 )
-                await websocket.send_text(
+                await send_with_broadcast(
+                    websocket,
                     json.dumps(
                         {
                             "type": "history-deleted",
@@ -162,13 +192,14 @@ def create_routes(default_context_cache: ServiceContext, connected_clients: list
             "text-input",
             "ai-speak-signal",
         ]:
-            await websocket.send_text(
-                json.dumps({"type": "full-text", "text": "Thinking..."})
+            await send_with_broadcast(
+                websocket, json.dumps({"type": "full-text", "text": "Thinking..."})
             )
 
             if data.get("type") == "ai-speak-signal":
                 user_input = ""
-                await websocket.send_text(
+                await send_with_broadcast(
+                    websocket,
                     json.dumps(
                         {
                             "type": "full-text",
@@ -194,7 +225,7 @@ def create_routes(default_context_cache: ServiceContext, connected_clients: list
                     tts_engine=session_service_context.tts_engine,
                     agent_engine=session_service_context.agent_engine,
                     live2d_model=session_service_context.live2d_model,
-                    websocket_send=websocket.send_text,
+                    websocket_send=make_broadcast_send(websocket),  # 使用包装函数
                     translate_engine=session_service_context.translate_engine,
                     conf_uid=session_service_context.character_config.conf_uid,
                     history_uid=state.history_uid,
@@ -206,8 +237,8 @@ def create_routes(default_context_cache: ServiceContext, connected_clients: list
             config_files = scan_config_alts_directory(
                 session_service_context.system_config.config_alts_dir
             )
-            await websocket.send_text(
-                json.dumps({"type": "config-files", "configs": config_files})
+            await send_with_broadcast(
+                websocket, json.dumps({"type": "config-files", "configs": config_files})
             )
         elif data.get("type") == "switch-config":
             config_file_name: str = data.get("file")
@@ -217,8 +248,8 @@ def create_routes(default_context_cache: ServiceContext, connected_clients: list
                 )
         elif data.get("type") == "fetch-backgrounds":
             bg_files = scan_bg_directory()
-            await websocket.send_text(
-                json.dumps({"type": "background-files", "files": bg_files})
+            await send_with_broadcast(
+                websocket, json.dumps({"type": "background-files", "files": bg_files})
             )
         else:
             logger.info("Unknown data type received.")
@@ -238,14 +269,15 @@ def create_routes(default_context_cache: ServiceContext, connected_clients: list
             translate_engine=default_context_cache.translate_engine,
         )
 
-        await websocket.send_text(
-            json.dumps({"type": "full-text", "text": "Connection established"})
+        await send_with_broadcast(
+            websocket, json.dumps({"type": "full-text", "text": "Connection established"})
         )
 
         connected_clients.append(websocket)
         logger.info("Connection established")
 
-        await websocket.send_text(
+        await send_with_broadcast(
+            websocket,
             json.dumps(
                 {
                     "type": "set-model-and-conf",
@@ -255,7 +287,7 @@ def create_routes(default_context_cache: ServiceContext, connected_clients: list
                 }
             )
         )
-        await websocket.send_text(json.dumps({"type": "control", "text": "start-mic"}))
+        await send_with_broadcast(websocket, json.dumps({"type": "control", "text": "start-mic"}))
 
         async def message_processor():
             try:
@@ -291,7 +323,10 @@ def create_routes(default_context_cache: ServiceContext, connected_clients: list
         """广播消息的WebSocket接口"""
         await websocket.accept()
         logger.info("Broadcast WebSocket connection established")
-
+        
+        # 添加到广播客户端集合
+        state.broadcast_websockets.add(websocket)
+        
         try:
             while True:
                 # 接收广播消息
@@ -314,6 +349,8 @@ def create_routes(default_context_cache: ServiceContext, connected_clients: list
             logger.info("Broadcast WebSocket disconnected")
         except Exception as e:
             logger.error(f"Error in broadcast websocket: {e}")
+        finally:
+            state.broadcast_websockets.discard(websocket)
             await websocket.close()
 
     return router

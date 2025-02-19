@@ -7,13 +7,16 @@ from datetime import datetime
 import os
 
 # 创建logs目录（如果不存在）
+# Create logs directory if it doesn't exist
 log_dir = os.path.join(os.path.dirname(__file__), '..', 'logs')
 os.makedirs(log_dir, exist_ok=True)
 
 # 设置日志格式
+# Set up logging format
 log_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # 创建文件处理器，使用时间戳命名日志文件
+# Create file handler with timestamp-based filename
 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 file_handler = logging.FileHandler(
     os.path.join(log_dir, f'broadcast_test_{timestamp}.log'),
@@ -22,94 +25,111 @@ file_handler = logging.FileHandler(
 file_handler.setFormatter(log_format)
 
 # 创建控制台处理器
+# Create console handler
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(log_format)
 
 # 配置根日志记录器
+# Configure root logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
 # 消息队列（共享消息）
+# Message queue (shared messages)
 message_queue = asyncio.Queue()
 
-async def websocket_client():
-    """监听 WebSocket 消息，并将消息放入队列"""
-    uri = "ws://localhost:12393/client-ws"
-    try:
-        async with websockets.connect(uri) as websocket:
-            logger.info("WebSocket客户端连接已建立")
-            while True:
-                message = await websocket.recv()
-                msg = json.loads(message)
-                if msg['type'] != 'audio':
-                    logger.info(f"客户端收到消息: {msg}")
-
-                # 放入队列供 broadcast_client 处理
-                    await message_queue.put(msg)
-    except Exception as e:
-        logger.error(f"WebSocket客户端错误: {e}\n{traceback.format_exc()}")
-
 async def broadcast_client():
-    """模拟一个广播消息的WebSocket客户端"""
+    """
+    模拟一个广播消息的WebSocket客户端
+    Simulate a WebSocket client for broadcasting messages
+    """
     uri = "ws://localhost:12393/broadcast-ws"
     try:
         async with websockets.connect(uri) as websocket:
-            logger.info("广播WebSocket连接已建立")
-            msg_list = ['你好啊', '你在做什么呢', '你中午吃了什么', '你要和我去游乐园玩吗']
-            i = 0
+            logger.info("广播WebSocket连接已建立 | Broadcast WebSocket connection established")
+            
+            # 预定义消息列表
+            # Predefined message list
+            messages = [
+                "你好啊",
+                "你在做什么呢",
+                "你中午吃了什么",
+                "你要和我去游乐园玩吗"
+            ]
+            msg_index = 0
+            # 存储最近一次音频的时长
+            # Store the duration of the most recent audio
+            last_duration_ms = 0
+
+            async def send_next_message():
+                """
+                发送下一条消息
+                Send the next message in queue
+                """
+                nonlocal msg_index
+                if msg_index < len(messages):
+                    message = {
+                        "type": "text-input",
+                        "text": messages[msg_index]
+                    }
+                    await websocket.send(json.dumps(message))
+                    logger.info(f"广播发送消息 | Broadcasting message [{msg_index}]: {message}")
+                    msg_index += 1
+
+            # 发送第一条消息
+            # Send the first message
+            await send_next_message()
+
             while True:
-
-                message = {
-                    "type": "text-input",
-                    "text": msg_list[i % len(msg_list)]
-                }
-                # 发送消息
-                await websocket.send(json.dumps(message))
-                # 确认发送,必须有,不如会出bug,不知道为啥
-                await websocket.send(json.dumps(message))
-                logger.info(f"广播发送: {message}")
-                # 接收状态回执
                 response = await websocket.recv()
-                logger.info(f"广播状态: {response}")
+                msg = json.loads(response)
+                
+                # 立即过滤掉大体积数据
+                # Immediately filter out large data
+                if "audio" in msg:
+                    # 只保留必要的字段
+                    # Keep only necessary fields
+                    filtered_msg = {
+                        "type": msg.get("type"),
+                        "duration_ms": msg.get("duration_ms", 0),
+                        "text": msg.get("text"),
+                        "actions": msg.get("actions"),
+                        "slice_length": msg.get("slice_length")
+                    }
+                    msg = filtered_msg
+                    logger.info(f"收到音频消息 | Received audio message, duration: {msg['duration_ms']}ms")
+                
+                # 处理消息结束信号
+                # Handle conversation end signal
+                if msg.get("type") == "control" and msg.get("text") == "conversation-chain-end":
+                    await send_next_message()
 
-                # {'type': 'control', 'text': 'conversation-chain-end'}
-                while True:
-                    if message_queue.empty():
-                        logger.info(f"广播端队列空")
-                        await asyncio.sleep(1)
-                        continue
-                    received_message = await message_queue.get()  # 从队列获取消息
-                    logger.info(f"广播端收到: {received_message}")
+                logger.info(f"广播状态 | Broadcast status: {msg}")
 
-                    if received_message['type'] == 'control' and received_message['text'] == 'conversation-chain-end':
-                        await asyncio.sleep(5)
-                        break
-                # await asyncio.sleep(30)  # 等待15秒发送下一条
-                i += 1
     except Exception as e:
-        logger.error(f"WebSocket客户端错误: {e}\n{traceback.format_exc()}")
+        logger.error(f"广播客户端错误 | Broadcast client error: {e}\n{traceback.format_exc()}")
 
 async def main():
-    """主函数：同时运行接收客户端和广播客户端"""
+    """
+    主函数：运行广播客户端
+    Main function: Run broadcast client
+    """
     try:
-        await asyncio.gather(
-            websocket_client(),
-            broadcast_client()
-        )
+        await asyncio.gather(broadcast_client())
     except KeyboardInterrupt:
-        logger.info("程序被用户中断")
+        logger.info("程序被用户中断 | Program interrupted by user")
     except Exception as e:
-        logger.error(f"运行时出错: {e}")
+        logger.error(f"运行时出错 | Runtime error: {e}")
 
 if __name__ == "__main__":
     try:
-        logger.info("=== 开始测试广播功能 ===")
+        logger.info("=== 开始测试广播功能 | Start testing broadcast function ===")
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("程序被用户中断")
+        logger.info("程序被用户中断 | Program interrupted by user")
     except Exception as e:
-        logger.error(f"运行时出错: {e}")
+        logger.error(f"运行时出错 | Runtime error: {e}")
     finally:
-        logger.info("=== 测试结束 ===")
+        logger.info("=== 测试结束 | Test ended ===")
