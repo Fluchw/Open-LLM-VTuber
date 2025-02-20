@@ -2,7 +2,7 @@ import asyncio
 import traceback
 import websockets
 import json
-import logging
+from loguru import logger
 from datetime import datetime
 import os
 
@@ -11,34 +11,9 @@ import os
 log_dir = os.path.join(os.path.dirname(__file__), '..', 'logs')
 os.makedirs(log_dir, exist_ok=True)
 
-# 设置日志格式
-# Set up logging format
-log_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-# 创建文件处理器，使用时间戳命名日志文件
-# Create file handler with timestamp-based filename
-timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-file_handler = logging.FileHandler(
-    os.path.join(log_dir, f'broadcast_test_{timestamp}.log'),
-    encoding='utf-8'
-)
-file_handler.setFormatter(log_format)
-
-# 创建控制台处理器
-# Create console handler
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(log_format)
-
-# 配置根日志记录器
-# Configure root logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
-
 # 消息队列（共享消息）
 # Message queue (shared messages)
-message_queue = asyncio.Queue()
+# message_queue = asyncio.Queue()
 
 async def broadcast_client():
     """
