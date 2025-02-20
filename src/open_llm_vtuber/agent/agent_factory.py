@@ -1,4 +1,4 @@
-from typing import Type
+from typing import Type, Literal
 from loguru import logger
 
 from .agents.agent_interface import AgentInterface
@@ -40,7 +40,11 @@ class AgentFactory:
                 raise ValueError("LLM provider not specified for basic memory agent")
 
             # Get the LLM config for this provider
-            llm_config = llm_configs.get(llm_provider)
+            llm_config: dict = llm_configs.get(llm_provider)
+            interrupt_method: Literal["system", "user"] = llm_config.pop(
+                "interrupt_method", "user"
+            )
+
             if not llm_config:
                 raise ValueError(
                     f"Configuration not found for LLM provider: {llm_provider}"
@@ -61,6 +65,7 @@ class AgentFactory:
                     "faster_first_response", True
                 ),
                 segment_method=basic_memory_settings.get("segment_method", "pysbd"),
+                interrupt_method=interrupt_method,
             )
 
         elif conversation_agent_choice == "mem0_agent":

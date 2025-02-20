@@ -1,266 +1,165 @@
 import json
-import asyncio
+from uuid import uuid4
 import numpy as np
-from fastapi import APIRouter, WebSocket
+from datetime import datetime
+from fastapi import APIRouter, WebSocket, UploadFile, File, Response
 from starlette.websockets import WebSocketDisconnect
 from loguru import logger
-from .conversation import conversation_chain
 from .service_context import ServiceContext
-from .config_manager.utils import (
-    scan_config_alts_directory,
-    scan_bg_directory,
-)
-from .chat_history_manager import (
-    create_new_history,
-    store_message,
-    modify_latest_message,
-    get_history,
-    delete_history,
-    get_history_list,
-)
+from .websocket_handler import WebSocketHandler
 
 
-def create_routes(default_context_cache: ServiceContext):
+def create_routes(default_context_cache: ServiceContext) -> APIRouter:
+    """
+    Create and return API routes for handling WebSocket connections.
+
+    Args:
+        default_context_cache: Default service context cache for new sessions.
+
+    Returns:
+        APIRouter: Configured router with WebSocket endpoint.
+    """
+
     router = APIRouter()
-    connected_clients = []
+    ws_handler = WebSocketHandler(default_context_cache)
 
     @router.websocket("/client-ws")
     async def websocket_endpoint(websocket: WebSocket):
+        """WebSocket endpoint for client connections"""
         await websocket.accept()
+        client_uid = str(uuid4())
 
-        session_service_context: ServiceContext = ServiceContext()
-        session_service_context.load_cache(
-            config=default_context_cache.config,
-            system_config=default_context_cache.system_config,
-            character_config=default_context_cache.character_config,
-            live2d_model=default_context_cache.live2d_model,
-            asr_engine=default_context_cache.asr_engine,
-            tts_engine=default_context_cache.tts_engine,
-            agent_engine=default_context_cache.agent_engine,
-            translate_engine=default_context_cache.translate_engine,
-        )
+        try:
+            await ws_handler.handle_new_connection(websocket, client_uid)
+            await ws_handler.handle_websocket_communication(websocket, client_uid)
+        except WebSocketDisconnect:
+            await ws_handler.handle_disconnect(client_uid)
+        except Exception as e:
+            logger.error(f"Error in WebSocket connection: {e}")
+            await ws_handler.handle_disconnect(client_uid)
+            raise
 
-        await websocket.send_text(
-            json.dumps({"type": "full-text", "text": "Connection established"})
-        )
+    @router.get("/web-tool")
+    async def web_tool_redirect():
+        """Redirect /web-tool to /web_tool/index.html"""
+        return Response(status_code=302, headers={"Location": "/web-tool/index.html"})
 
-        connected_clients.append(websocket)
-        logger.info("Connection established")
+    @router.get("/web_tool")
+    async def web_tool_redirect_alt():
+        """Redirect /web_tool to /web_tool/index.html"""
+        return Response(status_code=302, headers={"Location": "/web-tool/index.html"})
 
-        await websocket.send_text(
-            json.dumps(
-                {
-                    "type": "set-model-and-conf",
-                    "model_info": session_service_context.live2d_model.model_info,
-                    "conf_name": session_service_context.character_config.conf_name,
-                    "conf_uid": session_service_context.character_config.conf_uid,
-                }
+    @router.post("/asr")
+    async def transcribe_audio(file: UploadFile = File(...)):
+        """
+        Endpoint for transcribing audio using the ASR engine
+        """
+        logger.info(f"Received audio file for transcription: {file.filename}")
+
+        try:
+            contents = await file.read()
+
+            # Validate minimum file size
+            if len(contents) < 44:  # Minimum WAV header size
+                raise ValueError("Invalid WAV file: File too small")
+
+            # Decode the WAV header and get actual audio data
+            wav_header_size = 44  # Standard WAV header size
+            audio_data = contents[wav_header_size:]
+
+            # Validate audio data size
+            if len(audio_data) % 2 != 0:
+                raise ValueError("Invalid audio data: Buffer size must be even")
+
+            # Convert to 16-bit PCM samples to float32
+            try:
+                audio_array = (
+                    np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
+                    / 32768.0
+                )
+            except ValueError as e:
+                raise ValueError(
+                    f"Audio format error: {str(e)}. Please ensure the file is 16-bit PCM WAV format."
+                )
+
+            # Validate audio data
+            if len(audio_array) == 0:
+                raise ValueError("Empty audio data")
+
+            text = await default_context_cache.asr_engine.async_transcribe_np(
+                audio_array
             )
-        )
-        received_data_buffer = np.array([])
-        # start mic
-        await websocket.send_text(json.dumps({"type": "control", "text": "start-mic"}))
+            logger.info(f"Transcription result: {text}")
+            return {"text": text}
 
-        current_conversation_task: asyncio.Task | None = None
+        except ValueError as e:
+            logger.error(f"Audio format error: {e}")
+            return Response(
+                content=json.dumps({"error": str(e)}),
+                status_code=400,
+                media_type="application/json",
+            )
+        except Exception as e:
+            logger.error(f"Error during transcription: {e}")
+            return Response(
+                content=json.dumps(
+                    {"error": "Internal server error during transcription"}
+                ),
+                status_code=500,
+                media_type="application/json",
+            )
+
+    @router.websocket("/tts-ws")
+    async def tts_endpoint(websocket: WebSocket):
+        """WebSocket endpoint for TTS generation"""
+        await websocket.accept()
+        logger.info("TTS WebSocket connection established")
 
         try:
             while True:
-                message = await websocket.receive_text()
-                data = json.loads(message)
+                data = await websocket.receive_json()
+                text = data.get("text")
+                if not text:
+                    continue
 
-                # ==== chat history related ====
+                logger.info(f"Received text for TTS: {text}")
 
-                if data.get("type") == "fetch-history-list":
-                    histories = get_history_list(
-                        session_service_context.character_config.conf_uid
-                    )
-                    await websocket.send_text(
-                        json.dumps({"type": "history-list", "histories": histories})
-                    )
+                # Split text into sentences
+                sentences = [s.strip() for s in text.split(".") if s.strip()]
 
-                elif data.get("type") == "fetch-and-set-history":
-                    history_uid = data.get("history_uid")
-                    if history_uid:
-                        current_history_uid = history_uid
-                        session_service_context.agent_engine.set_memory_from_history(
-                            conf_uid=session_service_context.character_config.conf_uid,
-                            history_uid=history_uid,
-                        )
-                        messages = [
-                            msg
-                            for msg in get_history(
-                                session_service_context.character_config.conf_uid,
-                                history_uid,
+                try:
+                    # Generate and send audio for each sentence
+                    for sentence in sentences:
+                        sentence = sentence + "."  # Add back the period
+                        file_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid4())[:8]}"
+                        audio_path = (
+                            await default_context_cache.tts_engine.async_generate_audio(
+                                text=sentence, file_name_no_ext=file_name
                             )
-                            if msg["role"] != "system"
-                        ]
-                        await websocket.send_text(
-                            json.dumps({"type": "history-data", "messages": messages})
+                        )
+                        logger.info(
+                            f"Generated audio for sentence: {sentence} at: {audio_path}"
                         )
 
-                elif data.get("type") == "create-new-history":
-                    current_history_uid = create_new_history(
-                        session_service_context.character_config.conf_uid
-                    )
-                    session_service_context.agent_engine.set_memory_from_history(
-                        conf_uid=session_service_context.character_config.conf_uid,
-                        history_uid=current_history_uid,
-                    )
-                    await websocket.send_text(
-                        json.dumps(
+                        await websocket.send_json(
                             {
-                                "type": "new-history-created",
-                                "history_uid": current_history_uid,
+                                "status": "partial",
+                                "audioPath": audio_path,
+                                "text": sentence,
                             }
                         )
-                    )
 
-                elif data.get("type") == "delete-history":
-                    history_uid = data.get("history_uid")
-                    if history_uid:
-                        success = delete_history(
-                            session_service_context.character_config.conf_uid,
-                            history_uid,
-                        )
-                        await websocket.send_text(
-                            json.dumps(
-                                {
-                                    "type": "history-deleted",
-                                    "success": success,
-                                    "history_uid": history_uid,
-                                }
-                            )
-                        )
-                        if history_uid == current_history_uid:
-                            current_history_uid = None
+                    # Send completion signal
+                    await websocket.send_json({"status": "complete"})
 
-                # ==== conversation related ====
-
-                elif data.get("type") == "interrupt-signal":
-                    if current_conversation_task is None:
-                        logger.warning(
-                            "❌ Conversation task was NOT cancelled because there is no running conversation."
-                        )
-                    else:
-                        # Cancelling the task... and see if it was a success
-                        if not current_conversation_task.cancel():
-                            logger.warning(
-                                "❌ Conversation task was NOT cancelled for some reason."
-                            )
-                        else:
-                            logger.info(
-                                "🛑 Conversation task was succesfully interrupted."
-                            )
-                    # The part of the AI response heard by the user before interruption
-                    # is sent back from the frontend as an interruption signal
-                    # We'll store this in chat history instead of the full response
-                    heard_ai_response = data.get("text", "")
-
-                    try:
-                        session_service_context.agent_engine.handle_interrupt(
-                            heard_ai_response
-                        )
-                    except Exception as e:
-                        logger.error(f"Error handling interrupt: {e}")
-
-                    if not modify_latest_message(
-                        conf_uid=session_service_context.character_config.conf_uid,
-                        history_uid=current_history_uid,
-                        role="ai",
-                        new_content=heard_ai_response,
-                    ):
-                        logger.warning("Failed to modify message.")
-                    logger.info(
-                        f"💾 Stored Paritial AI message: '''{heard_ai_response}'''"
-                    )
-
-                    store_message(
-                        conf_uid=session_service_context.character_config.conf_uid,
-                        history_uid=current_history_uid,
-                        role="system",
-                        content="[Interrupted by user]",
-                    )
-
-                # Default sampleRate = 16000, frameSamples = 512, buffer window = 32ms
-                elif data.get("type") == "mic-audio-data":
-                    received_data_buffer = np.append(
-                        received_data_buffer,
-                        np.array(data.get("audio"), dtype=np.float32),
-                    )
-
-                elif data.get("type") in [
-                    "mic-audio-end",
-                    "text-input",
-                    "ai-speak-signal",
-                ]:
-                    await websocket.send_text(
-                        json.dumps({"type": "full-text", "text": "Thinking..."})
-                    )
-
-                    if data.get("type") == "ai-speak-signal":
-                        user_input = ""
-                        await websocket.send_text(
-                            json.dumps(
-                                {
-                                    "type": "full-text",
-                                    "text": "AI wants to speak something...",
-                                }
-                            )
-                        )
-                    elif data.get("type") == "text-input":
-                        user_input = data.get("text")
-                    else:
-                        user_input = received_data_buffer
-
-                    received_data_buffer = np.array([])
-
-                    # Get images if present
-                    images = data.get("images")
-
-                    logger.debug(f"data: {data}")
-
-                    # Initiate conversation chain task asynchronously
-                    # We'll store the task object so we can cancel it if needed
-                    # We'll NOT await the task here, so we can continue to receive messages
-                    current_conversation_task: asyncio.Task = asyncio.create_task(
-                        conversation_chain(
-                            user_input=user_input,
-                            asr_engine=session_service_context.asr_engine,
-                            tts_engine=session_service_context.tts_engine,
-                            agent_engine=session_service_context.agent_engine,
-                            live2d_model=session_service_context.live2d_model,
-                            websocket_send=websocket.send_text,
-                            translate_engine=session_service_context.translate_engine,
-                            conf_uid=session_service_context.character_config.conf_uid,
-                            history_uid=current_history_uid,
-                            images=images,
-                        )
-                    )
-
-                elif data.get("type") == "fetch-configs":
-                    config_files = scan_config_alts_directory(
-                        session_service_context.system_config.config_alts_dir
-                    )
-                    # logger.info("Sending config files +++++")
-                    # logger.debug({"type": "config-files", "configs": config_files})
-                    await websocket.send_text(
-                        json.dumps({"type": "config-files", "configs": config_files})
-                    )
-                elif data.get("type") == "switch-config":
-                    config_file_name: str = data.get("file")
-                    if config_file_name:
-                        await session_service_context.handle_config_switch(
-                            websocket, config_file_name
-                        )
-                elif data.get("type") == "fetch-backgrounds":
-                    bg_files = scan_bg_directory()
-                    await websocket.send_text(
-                        json.dumps({"type": "background-files", "files": bg_files})
-                    )
-                else:
-                    logger.info("Unknown data type received.")
+                except Exception as e:
+                    logger.error(f"Error generating TTS: {e}")
+                    await websocket.send_json({"status": "error", "message": str(e)})
 
         except WebSocketDisconnect:
-            connected_clients.remove(websocket)
+            logger.info("TTS WebSocket client disconnected")
+        except Exception as e:
+            logger.error(f"Error in TTS WebSocket connection: {e}")
+            await websocket.close()
 
     return router

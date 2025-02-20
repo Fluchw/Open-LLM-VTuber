@@ -58,11 +58,13 @@ class TextData:
 
     Attributes:
         source: Source of the text
-        content: The text content
+        content: str - The text content
+        from_name: Optional[str] - Name of the sender/character
     """
 
     source: TextSource
     content: str
+    from_name: Optional[str] = None
 
 
 class BaseInput:

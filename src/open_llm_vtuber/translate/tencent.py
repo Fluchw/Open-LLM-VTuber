@@ -11,7 +11,7 @@ from .translate_interface import TranslateInterface
 
 
 def sign(key, msg):
-    """生成HMAC-SHA256签名"""
+    """Generate HMAC-SHA256 signature"""
     return hmac.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
 
 
@@ -38,14 +38,14 @@ class TencentTranslate(TranslateInterface):
         self.target_lang = target_lang
 
     def create_signature(self, date, service):
-        """创建签名"""
+        """Create signature"""
         secret_date = sign(("TC3" + self.secret_key).encode("utf-8"), date)
         secret_service = sign(secret_date, service)
         secret_signing = sign(secret_service, "tc3_request")
         return secret_signing
 
     def _prepare_headers(self, payload: str, timestamp: int, date: str) -> dict:
-        """准备请求头"""
+        """Prepare request headers"""
         ct = "application/json; charset=utf-8"
         canonical_uri = "/"
         canonical_querystring = ""
@@ -94,7 +94,7 @@ class TencentTranslate(TranslateInterface):
         return headers
 
     def translate(self, text: str) -> str:
-        """翻译文本"""
+        """Translate text"""
         timestamp = int(time.time())
         date = datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d")
 
@@ -114,24 +114,8 @@ class TencentTranslate(TranslateInterface):
                 url="https://" + self.host, headers=headers, data=payload
             )
             res = response.json()
-            logger.info(f"请求成功: {res}")
-            return res.get("Response", {}).get("TargetText", "翻译失败")
+            logger.info(f"Request successful: {res}")
+            return res.get("Response", {}).get("TargetText", "Translation failed")
         except Exception as e:
-            logger.critical(f"调用API出错: {e}")
+            logger.critical(f"API call error: {e}")
             raise e
-
-
-# 测试脚本
-def main():
-    translator = TencentTranslate(
-        secret_id="secret_id", secret_key="secret_key", region="ap-guangzhou"
-    )
-    try:
-        result = translator.translate(text="Hello, world!")
-        print("翻译结果:", result)
-    except Exception as e:
-        print(f"发生错误: {e}")
-
-
-if __name__ == "__main__":
-    main()

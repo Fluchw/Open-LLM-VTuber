@@ -1,43 +1,69 @@
-#!/usr/bin/env python3
 import os
-import shutil
-import subprocess
 import sys
+import ctypes
+import shutil
 import locale
+import logging
+import platform
+import subprocess
+from datetime import datetime
+from merge_configs import merge_configs, compare_configs
+
+USER_CONF = "conf.yaml"
+BACKUP_CONF = "conf.yaml.backup"
 
 
-# 定义基本的终端颜色代码
-class Colors:
-    """跨平台的终端颜色支持"""
+# Remove Colors class and configure logging
+def configure_logging():
+    if not os.path.exists("logs"):
+        os.makedirs("logs")
+    log_filename = f"./logs/upgrade_{datetime.now().strftime('%Y-%m-%d-%H-%M')}.log"
+    logger = logging.getLogger("upgrade")
+    logger.setLevel(logging.DEBUG)
 
-    def __init__(self):
-        self.use_colors = sys.platform != "win32" or os.environ.get("TERM")
+    # File handler (no colors)
+    file_handler = logging.FileHandler(log_filename)
+    file_handler.setLevel(logging.DEBUG)
+    file_formatter = logging.Formatter("[%(levelname)s] %(message)s")
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
 
-    def red(self, text):
-        return f"\033[91m{text}\033[0m" if self.use_colors else text
+    # Colored console handler
+    class ColoredFormatter(logging.Formatter):
+        COLORS = {
+            logging.DEBUG: "\033[96m",  # cyan
+            logging.INFO: "\033[92m",  # green
+            logging.WARNING: "\033[93m",  # yellow
+            logging.ERROR: "\033[91m",  # red
+            logging.CRITICAL: "\033[95m",  # magenta
+        }
+        RESET = "\033[0m"
 
-    def green(self, text):
-        return f"\033[92m{text}\033[0m" if self.use_colors else text
+        def format(self, record):
+            color = self.COLORS.get(record.levelno, self.RESET)
+            message = super().format(record)
+            return f"{color}{message}{self.RESET}"
 
-    def yellow(self, text):
-        return f"\033[93m{text}\033[0m" if self.use_colors else text
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setLevel(logging.DEBUG)
+    stream_formatter = ColoredFormatter("[%(levelname)s] %(message)s")
+    stream_handler.setFormatter(stream_formatter)
+    logger.addHandler(stream_handler)
 
-    def cyan(self, text):
-        return f"\033[96m{text}\033[0m" if self.use_colors else text
+    return logger
 
 
-# 初始化颜色
-colors = Colors()
-
-# 语言字典 / Language dictionary
+# Language dictionaries and other constants
 TEXTS = {
     "zh": {
         "welcome_message": "Auto-Upgrade Script v.0.1.0\nOpen-LLM-VTuber 升级脚本 - 此脚本仍在实验阶段，可能无法按预期工作。",
         "lang_select": "请选择语言/Please select language (zh/en):",
         "invalid_lang": "无效的语言选择，使用英文作为默认语言",
         "not_git_repo": "错误：当前目录不是git仓库。请进入 Open-LLM-VTuber 目录后再运行此脚本。\n当然，更有可能的是你下载的Open-LLM-VTuber不包含.git文件夹 (如果你是透过下载压缩包而非使用 git clone 命令下载的话可能会造成这种情况)，这种情况下目前无法用脚本升级。",
-        "backup_config": "备份配置文件到: {}",
+        "backup_user_config": "正在备份 {user_conf} 到 {backup_conf}",
+        "configs_up_to_date": "[DEBUG] 用户配置已是最新。",
         "no_config": "警告：未找到conf.yaml文件",
+        "copy_default_config": "正在从模板复制默认配置",
         "uncommitted": "发现未提交的更改，正在暂存...",
         "stash_error": "错误：无法暂存更改",
         "changes_stashed": "更改已暂存",
@@ -60,16 +86,21 @@ TEXTS = {
 3. 从远程仓库拉取最新代码 (git pull)
 4. 尝试恢复之前暂存的更改 (git stash pop)
 
-是否继续？(y/n): """,
+是否继续？(y/N): """,
         "abort_upgrade": "升级已取消",
+        "merged_config_success": "新增配置项已合并:",
+        "merged_config_none": "未发现新增配置项。",
+        "merge_failed": "配置合并失败: {error}",
     },
     "en": {
         "welcome_message": "Auto-Upgrade Script v.0.1.0\nOpen-LLM-VTuber upgrade script - This script is highly experimental and may not work as expected.",
         "lang_select": "请选择语言/Please select language (zh/en):",
         "invalid_lang": "Invalid language selection, using English as default",
         "not_git_repo": "Error: Current directory is not a git repository. Please run this script inside the Open-LLM-VTuber directory.\nAlternatively, it is likely that the Open-LLM-VTuber you downloaded does not contain the .git folder (this can happen if you downloaded a zip archive instead of using git clone), in which case you cannot upgrade using this script.",
-        "backup_config": "Backing up config file to: {}",
+        "backup_user_config": "Backing up {user_conf} to {backup_conf}",
+        "configs_up_to_date": "[DEBUG] User configuration is up-to-date.",
         "no_config": "Warning: conf.yaml not found",
+        "copy_default_config": "Copying default configuration from template",
         "uncommitted": "Found uncommitted changes, stashing...",
         "stash_error": "Error: Unable to stash changes",
         "changes_stashed": "Changes stashed",
@@ -92,36 +123,72 @@ This script will perform the following operations:
 3. Pull latest code from remote repository (git pull)
 4. Attempt to restore previously stashed changes (git stash pop)
 
-Continue? (y/n): """,
+Continue? (y/N): """,
         "abort_upgrade": "Upgrade aborted",
+        "merged_config_success": "Merged new configuration items:",
+        "merged_config_none": "No new configuration items found.",
+        "merge_failed": "Configuration merge failed: {error}",
     },
 }
 
 
 def get_system_language():
-    """获取系统语言/Get system language"""
-    try:
-        # 使用推荐的新方法替代已废弃的getdefaultlocale()
-        locale.setlocale(locale.LC_ALL, "")
-        sys_lang = locale.getlocale()[0]
-        return "zh" if sys_lang and sys_lang.startswith("zh") else "en"
-    except Exception as e:
-        print(f"Failed to get system language, default to english: {str(e)}")
-        return "en"
+    """Get system language using a combination of methods."""
+
+    os_name = platform.system()
+
+    if os_name == "Windows":
+        try:
+            # Use Windows API to get the UI language
+            windll = ctypes.windll.kernel32
+            ui_lang = windll.GetUserDefaultUILanguage()
+            lang_code = locale.windows_locale.get(ui_lang)
+            if lang_code:
+                lang = lang_code.split("_")[0]
+                if lang.startswith("zh"):
+                    return "zh"
+        except Exception:
+            pass
+
+    elif os_name == "Darwin":  # macOS
+        try:
+            # Use defaults command to get the AppleLocale
+            result = subprocess.run(
+                ["defaults", "read", "-g", "AppleLocale"],
+                capture_output=True,
+                text=True,
+            )
+            lang = result.stdout.strip().split("_")[0]
+            if lang.startswith("zh"):
+                return "zh"
+        except Exception:
+            pass
+
+    elif os_name == "Linux":
+        # Check the LANG environment variable
+        lang = os.environ.get("LANG")
+        if lang:
+            lang = lang.split("_")[0]
+            if lang.startswith("zh"):
+                return "zh"
+
+    # Fallback to using locale.getpreferredencoding()
+    encoding = locale.getpreferredencoding()
+    if encoding.lower() in ("cp936", "gbk", "big5"):
+        return "zh"
+
+    return "en"
 
 
 def select_language():
-    """选择语言/Select language"""
-    default_lang = get_system_language()
-    try:
-        lang = input(TEXTS["en"]["lang_select"] + " ").lower()
-        return lang if lang in ["zh", "en"] else default_lang
-    except Exception:
-        return default_lang
+    """Select language based on command-line argument or system language"""
+    if len(sys.argv) > 1 and sys.argv[1].lower() in ["zh", "en"]:
+        return sys.argv[1].lower()
+    return get_system_language()
 
 
 def run_command(command):
-    """运行shell命令并返回结果/Run shell command and return result"""
+    """Run shell command and return result"""
     try:
         result = subprocess.run(
             command,
@@ -142,19 +209,8 @@ def run_command(command):
         return False, f"Unexpected error: {str(e)}"
 
 
-def backup_config():
-    """备份conf.yaml文件/Backup conf.yaml file"""
-    backup_path = "conf.yaml.backup"
-
-    if os.path.exists("conf.yaml"):
-        print(colors.green(TEXTS["en"]["backup_config"].format(backup_path)))
-        shutil.copy2("conf.yaml", backup_path)
-        return True
-    return False
-
-
 def check_git_installed():
-    """检查是否安装了Git/Check if Git is installed"""
+    """Check if Git is installed"""
     command = "where git" if sys.platform == "win32" else "which git"
     try:
         result = subprocess.run(command, shell=True, capture_output=True, text=True)
@@ -163,81 +219,115 @@ def check_git_installed():
         return False
 
 
-def main():
-    global texts
-    print(colors.cyan(TEXTS["en"]["welcome_message"]))
+def sync_user_config(logger, lang: str = "en") -> None:
+    texts = TEXTS[lang]
+    default_template = (
+        "config_templates/conf.ZH.default.yaml"
+        if lang == "zh"
+        else "config_templates/conf.default.yaml"
+    )
 
+    if os.path.exists(USER_CONF):
+        # Compare configurations and only merge if necessary.
+        if not compare_configs(
+            user_path=USER_CONF, default_path=default_template, lang=lang
+        ):
+            try:
+                # backup first
+                logger.info(
+                    texts["backup_user_config"].format(
+                        user_conf=USER_CONF, backup_conf=BACKUP_CONF
+                    )
+                )
+                shutil.copy2(USER_CONF, BACKUP_CONF)
+
+                # merge
+                new_keys = merge_configs(
+                    user_path=USER_CONF, default_path=default_template, lang=lang
+                )
+                if new_keys:
+                    logger.info(texts["merged_config_success"])
+                    for key in new_keys:
+                        logger.info(f"  - {key}")
+                else:
+                    logger.info(texts["merged_config_none"])
+            except Exception as e:
+                logger.error(texts["merge_failed"].format(error=e))
+        else:
+            logger.info(texts["configs_up_to_date"])
+    else:
+        logger.warning(texts["no_config"])
+        logger.warning(texts["copy_default_config"])
+        shutil.copy2(default_template, USER_CONF)
+
+
+def perform_upgrade(custom_logger=None):
+    logger = custom_logger or configure_logging()
+
+    logger.info(TEXTS["en"]["welcome_message"])
     lang = select_language()
     texts = TEXTS[lang]
 
-    # 检查Git是否已安装
     if not check_git_installed():
-        print(colors.red(texts["git_not_found"]))
-        sys.exit(1)
+        logger.error(texts["git_not_found"])
+        return
 
-    # 显示操作预览并请求确认
-    response = input(colors.yellow(texts["operation_preview"])).lower()
+    response = input("\033[93m" + texts["operation_preview"] + "\033[0m").lower()
     if response != "y":
-        print(colors.yellow(texts["abort_upgrade"]))
-        sys.exit(0)
+        logger.warning(texts["abort_upgrade"])
+        return
 
-    # 检查是否在git仓库中
     success, error_msg = run_command("git rev-parse --is-inside-work-tree")
     if not success:
-        print(colors.red(texts["not_git_repo"]))
-        print(colors.red(f"Error details: {error_msg}"))
-        sys.exit(1)
+        logger.error(texts["not_git_repo"])
+        logger.error(f"Error details: {error_msg}")
+        return
 
-    # 检查是否有未提交的更改
     success, changes = run_command("git status --porcelain")
     if not success:
-        print(colors.red(f"Failed to check git status: {changes}"))
-        sys.exit(1)
+        logger.error(f"Failed to check git status: {changes}")
+        return
     has_changes = bool(changes.strip())
 
-    # 备份配置文件
-    if not backup_config():
-        print(colors.yellow(texts["no_config"]))
-
     if has_changes:
-        print(colors.yellow(texts["uncommitted"]))
+        logger.warning(texts["uncommitted"])
         success, output = run_command("git stash")
         if not success:
-            print(colors.red(texts["stash_error"]))
-            print(colors.red(f"Error details: {output}"))
-            sys.exit(1)
-        print(colors.green(texts["changes_stashed"]))
+            logger.error(texts["stash_error"])
+            logger.error(f"Error details: {output}")
+            return
+        logger.info(texts["changes_stashed"])
 
-    # 更新代码
-    print(colors.cyan(texts["pulling"]))
+    logger.info(texts["pulling"])
     success, output = run_command("git pull")
     if not success:
-        print(colors.red(texts["pull_error"]))
-        print(colors.red(f"Error details: {output}"))
+        logger.error(texts["pull_error"])
+        logger.error(f"Error details: {output}")
         if has_changes:
-            print(colors.yellow(texts["restoring"]))
+            logger.warning(texts["restoring"])
             success, restore_output = run_command("git stash pop")
             if not success:
-                print(colors.red(f"Failed to restore changes: {restore_output}"))
-        sys.exit(1)
+                logger.error(f"Failed to restore changes: {restore_output}")
+        return
 
-    # 恢复暂存的更改
+    sync_user_config(logger=logger, lang=lang)  # merge user config
+
     if has_changes:
-        print(colors.yellow(texts["restoring"]))
+        logger.warning(texts["restoring"])
         success, output = run_command("git stash pop")
         if not success:
-            print(colors.red(texts["conflict_warning"]))
-            print(colors.red(f"Error details: {output}"))
-            print(colors.yellow(texts["manual_resolve"]))
-            print(colors.cyan(texts["stash_list"]))
-            print(colors.cyan(texts["stash_pop"]))
-            sys.exit(1)
+            logger.error(texts["conflict_warning"])
+            logger.error(f"Error details: {output}")
+            logger.warning(texts["manual_resolve"])
+            logger.info(texts["stash_list"])
+            logger.info(texts["stash_pop"])
+            return
 
-    print(colors.green("\n" + texts["upgrade_complete"]))
-    print(colors.cyan(texts["check_config"]))
-    print(colors.cyan(texts["resolve_conflicts"]))
-    print(colors.cyan(texts["check_backup"]))
+    logger.info("\n" + texts["upgrade_complete"])
+    logger.info(texts["check_config"])
+    logger.info(texts["resolve_conflicts"])
+    logger.info(texts["check_backup"])
 
 
 if __name__ == "__main__":
-    main()
+    perform_upgrade()

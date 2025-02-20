@@ -84,7 +84,7 @@ def load_text_file_with_guess_encoding(file_path: str) -> str | None:
     Returns:
     - str: The content of the text file or None if an error occurred.
     """
-    encodings = ["utf-8", "utf-8-sig", "gbk", "gb2312", "ascii"]
+    encodings = ["utf-8", "utf-8-sig", "gbk", "gb2312", "ascii", "cp936"]
 
     for encoding in encodings:
         try:

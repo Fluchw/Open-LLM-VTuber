@@ -6,6 +6,7 @@ from pathlib import Path
 import tomli
 import uvicorn
 from loguru import logger
+from upgrade import sync_user_config, select_language
 from src.open_llm_vtuber.server import WebSocketServer
 from src.open_llm_vtuber.config_manager import Config, read_yaml, validate_config
 
@@ -50,17 +51,22 @@ def parse_args():
     return parser.parse_args()
 
 
+def init_config():
+    # If user config does not exist, copy from template based on system language
+    sync_user_config(logger=logger, lang=select_language())
+
+
 @logger.catch
 def run(console_log_level: str):
     init_logger(console_log_level)
-    logger.info(f"t41372/Open-LLM-VTuber, version v{get_version()}")
+    logger.info(f"Open-LLM-VTuber, version v{get_version()}")
+    init_config()
 
     atexit.register(WebSocketServer.clean_cache)
 
     # Load configurations from yaml file
     config: Config = validate_config(read_yaml("conf.yaml"))
     server_config = config.system_config
-    # config["LIVE2D"] = True  # make sure the live2d is enabled
 
     # Initialize and run the WebSocket server
     server = WebSocketServer(config=config)

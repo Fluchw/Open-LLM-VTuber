@@ -8,11 +8,13 @@ from prompts import prompt_loader
 from .live2d_model import Live2dModel
 from .asr.asr_interface import ASRInterface
 from .tts.tts_interface import TTSInterface
+from .vad.vad_interface import VADInterface
 from .agent.agents.agent_interface import AgentInterface
 from .translate.translate_interface import TranslateInterface
 
 from .asr.asr_factory import ASRFactory
 from .tts.tts_factory import TTSFactory
+from .vad.vad_factory import VADFactory
 from .agent.agent_factory import AgentFactory
 from .translate.translate_factory import TranslateFactory
 
@@ -23,6 +25,7 @@ from .config_manager import (
     SystemConfig,
     ASRConfig,
     TTSConfig,
+    VADConfig,
     TranslatorConfig,
     read_yaml,
     validate_config,
@@ -43,10 +46,13 @@ class ServiceContext:
         self.tts_engine: TTSInterface = None
         self.agent_engine: AgentInterface = None
         # translate_engine can be none if translation is disabled
+        self.vad_engine: VADInterface | None = None
         self.translate_engine: TranslateInterface | None = None
 
         # the system prompt is a combination of the persona prompt and live2d expression prompt
         self.system_prompt: str = None
+
+        self.history_uid: str = ""  # Add history_uid field
 
     def __str__(self):
         return (
@@ -60,6 +66,8 @@ class ServiceContext:
             f"    Config: {json.dumps(self.character_config.tts_config.model_dump(), indent=6) if self.character_config.tts_config else 'None'}\n"
             f"  LLM Engine: {type(self.agent_engine).__name__ if self.agent_engine else 'Not Loaded'}\n"
             f"    Agent Config: {json.dumps(self.character_config.agent_config.model_dump(), indent=6) if self.character_config.agent_config else 'None'}\n"
+            f"  VAD Engine: {type(self.vad_engine).__name__ if self.vad_engine else 'Not Loaded'}\n"
+            f"    Agent Config: {json.dumps(self.character_config.vad_config.model_dump(), indent=6) if self.character_config.vad_config else 'None'}\n"
             f"  System Prompt: {self.system_prompt or 'Not Set'}"
         )
 
@@ -73,6 +81,7 @@ class ServiceContext:
         live2d_model: Live2dModel,
         asr_engine: ASRInterface,
         tts_engine: TTSInterface,
+        vad_engine: VADInterface,
         agent_engine: AgentInterface,
         translate_engine: TranslateInterface | None,
     ) -> None:
@@ -91,6 +100,7 @@ class ServiceContext:
         self.live2d_model = live2d_model
         self.asr_engine = asr_engine
         self.tts_engine = tts_engine
+        self.vad_engine = vad_engine
         self.agent_engine = agent_engine
         self.translate_engine = translate_engine
 
@@ -123,6 +133,9 @@ class ServiceContext:
 
         # init tts from character config
         self.init_tts(config.character_config.tts_config)
+
+        # init vad from character config
+        self.init_vad(config.character_config.vad_config)
 
         # init agent from character config
         self.init_agent(
@@ -172,6 +185,18 @@ class ServiceContext:
         else:
             logger.info("TTS already initialized with the same config.")
 
+    def init_vad(self, vad_config: VADConfig) -> None:
+        if not self.vad_engine or (self.character_config.vad_config != vad_config):
+            logger.info(f"Initializing VAD: {vad_config.vad_model}")
+            self.vad_engine = VADFactory.get_vad_engine(
+                vad_config.vad_model,
+                **getattr(vad_config, vad_config.vad_model.lower()).model_dump(),
+            )
+            # saving config should be done after successful initialization
+            self.character_config.vad_config = vad_config
+        else:
+            logger.info("VAD already initialized with the same config.")
+
     def init_agent(self, agent_config: AgentConfig, persona_prompt: str) -> None:
         """Initialize or update the LLM engine based on agent configuration."""
         logger.info(f"Initializing Agent: {agent_config.conversation_agent_choice}")
@@ -186,6 +211,9 @@ class ServiceContext:
 
         system_prompt = self.construct_system_prompt(persona_prompt)
 
+        # Pass avatar to agent factory
+        avatar = self.character_config.avatar or ""  # Get avatar from config
+
         try:
             self.agent_engine = AgentFactory.create_agent(
                 conversation_agent_choice=agent_config.conversation_agent_choice,
@@ -194,6 +222,7 @@ class ServiceContext:
                 system_prompt=system_prompt,
                 live2d_model=self.live2d_model,
                 tts_preprocessor_config=self.character_config.tts_preprocessor_config,
+                character_avatar=avatar,  # Add avatar parameter
             )
 
             logger.debug(f"Agent choice: {agent_config.conversation_agent_choice}")
@@ -249,6 +278,9 @@ class ServiceContext:
         logger.debug(f"constructing persona_prompt: '''{persona_prompt}'''")
 
         for prompt_name, prompt_file in self.system_config.tool_prompts.items():
+            if prompt_name == "group_conversation_prompt":
+                continue
+
             prompt_content = prompt_loader.load_util(prompt_file)
 
             if prompt_name == "live2d_expression_prompt":

@@ -7,7 +7,8 @@ from loguru import logger
 from pathlib import Path
 
 from .agent_interface import AgentInterface
-from ..output_types import AudioOutput, Actions
+from ..output_types import AudioOutput, Actions, DisplayText
+from ..input_types import BatchInput
 from ...chat_history_manager import get_metadata, update_metadate
 
 
@@ -153,12 +154,12 @@ class HumeAIAgent(AgentInterface):
             asyncio.create_task(self._ws.close())
             self._connected = False
 
-    async def chat(self, prompt: str) -> AsyncIterator[AudioOutput]:
+    async def chat(self, batch_input: BatchInput) -> AsyncIterator[AudioOutput]:
         """
         Chat with Hume AI and get audio response
 
         Args:
-            prompt: User input text
+            batch_input: BatchInput containing text and optional media
 
         Returns:
             AsyncIterator[AudioOutput]: Stream of AudioOutput objects
@@ -167,9 +168,18 @@ class HumeAIAgent(AgentInterface):
             self._reset_idle_timer()
             await self._ensure_connection()
 
+            # Extract main text from BatchInput
+            input_text = batch_input.texts[0].content if batch_input.texts else ""
+
+            # Hume AI doesn't support image input, log warning if images present
+            if batch_input.images:
+                logger.warning(
+                    "Hume AI does not support image input. Images will be ignored."
+                )
+
             message = {
                 "type": "user_input",
-                "text": prompt,
+                "text": input_text,
             }
             await self._ws.send(json.dumps(message))
 
@@ -194,10 +204,10 @@ class HumeAIAgent(AgentInterface):
                                 f.write(audio_data)
                                 logger.debug(f"Saved audio to cache file: {cache_file}")
 
-                            # Create AudioOutput with empty Actions
+                            # Create AudioOutput with DisplayText
                             yield AudioOutput(
                                 audio_path=str(cache_file),
-                                display_text=self._current_text,
+                                display_text=DisplayText(text=self._current_text),
                                 transcript=self._current_text,
                                 actions=Actions(),
                             )
@@ -219,7 +229,7 @@ class HumeAIAgent(AgentInterface):
             logger.warning(f"Connection closed: {e}, attempting to reconnect...")
             self._connected = False
             await self._ensure_connection()
-            async for result in self.chat(prompt):
+            async for result in self.chat(batch_input):
                 yield result
 
         except Exception as e:

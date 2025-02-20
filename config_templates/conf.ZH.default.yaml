@@ -5,20 +5,24 @@
 # ===========================
 # 系统设置：与服务器初始化相关的设置
 system_config:
-  conf_version: "v1.0.3" # 配置文件版本
+  conf_version: "v1.1.0-alpha.1" # 配置文件版本
   host: "localhost" # 服务器监听的地址，"0.0.0.0" 表示监听所有网络接口；如果需要安全，可以使用 "127.0.0.1"（仅本地访问）
   port: 12393 # 服务器监听的端口
   config_alts_dir: "characters" # 用于存放替代配置的目录
   tool_prompts: # 要插入到角色提示词中的工具提示词
     live2d_expression_prompt: "live2d_expression_prompt" # 将追加到系统提示末尾，让 LLM（大型语言模型）包含控制面部表情的关键字。支持的关键字将自动加载到 `[<insert_emomap_keys>]` 的位置。
-    # 启用此选项可让不具备思维链的LLM也能展示内心想法、心理活动和动作（以括号形式呈现），但不会进行语音合成。更多详情请参考 think_tag_prompt。
-    think_tag_prompt: "think_tag_prompt"
+    # 启用 think_tag_prompt 可让不具备思考输出的 LLM 也能展示内心想法、心理活动和动作（以括号形式呈现），但不会进行语音合成。更多详情请参考 think_tag_prompt。
+    # think_tag_prompt: "think_tag_prompt"
+  group_conversation_prompt: "group_conversation_prompt" # 当使用群聊时，此提示词将添加到每个 AI 参与者的记忆中。
 
 # 默认角色的配置
 character_config:
-  conf_name: "shizuku-local" # 角色配置名称
-  conf_uid: "shizuku-local-001" # 角色配置唯一标识符
+  conf_name: "shizuku-local" # 角色配置文件的名称
+  conf_uid: "shizuku-local-001" # 角色配置的唯一标识符
   live2d_model_name: "shizuku-local" # Live2D 模型名称
+  character_name: "Shizuku" # 将在群聊中使用，并显示为 AI 的名称。
+  avatar: "shizuku.png" # 建议使用正方形图像作为头像。将其保存到 avatars 文件夹中。留空则使用角色名称的首字母作为头像。
+  human_name: "Human" # 将在群聊中使用，并显示为人类的名称。
 
   # ============== 提示词 ==============
 
@@ -95,6 +99,10 @@ character_config:
         project_id: "project_glass" # 项目 ID
         model: "qwen2.5:latest" # 使用的模型
         temperature: 1.0 # 温度，介于 0 到 2 之间
+        interrupt_method: "user"
+        # 用于表示中断信号的方法(提示词模式)。
+        # 如果LLM支持在聊天记忆中的任何位置插入系统提示词，请使用“system”。
+        # 否则，请使用“user”。您一般不需要更改此设置。
 
       # Claude API 配置
       claude_llm:
@@ -272,6 +280,20 @@ character_config:
       seed: 0 # 种子
       api_name: "/generate_audio" # API 名称
 
+    cosyvoice2_tts: # Cosy Voice TTS 连接到 gradio webui
+      # 查看他们的文档以了解部署和以下配置的含义
+      client_url: "http://127.0.0.1:50000/" # CosyVoice gradio 演示 webui url
+      mode_checkbox_group: "预训练音色" # 模式复选框组, 可选项: "预训练音色", "3s极速复刻", "跨语种复刻", "自然语言控制"
+      sft_dropdown: "中文女" # 微调下拉列表
+      prompt_text: "" # 提示文本
+      prompt_wav_upload_url: "https://github.com/gradio-app/gradio/raw/main/test/test_files/audio_sample.wav" # 提示 wav 上传 url
+      prompt_wav_record_url: "https://github.com/gradio-app/gradio/raw/main/test/test_files/audio_sample.wav" # 提示 wav 录制 url
+      instruct_text: "" # 指令文本
+      stream: False # 流式生成
+      seed: 0 # 种子
+      speed: 1.0 # 语速
+      api_name: "/generate_audio" # API 名称
+
     melo_tts:
       speaker: "EN-Default" # ZH
       language: "EN" # ZH
@@ -335,6 +357,20 @@ character_config:
       speed: 1.0 # 语速（1.0 为正常）
       debug: false # 启用调试模式（True/False）
 
+
+  # =================== Voice Activity Detection ===================
+  vad_config:
+    vad_model: "silero_vad"
+
+    silero_vad:
+      orig_sr: 16000 # 原始音频采样率
+      target_sr: 16000 # 目标音频采样率
+      prob_threshold: 0.4 # 语音活动检测的概率阈值
+      db_threshold: 60 # 语音活动检测的分贝阈值
+      required_hits: 3 # 连续命中次数以确认语音
+      required_misses: 24 # 连续未命中次数以确认静音
+      smoothing_window: 5 # 语音活动检测的平滑窗口大小
+
   tts_preprocessor_config:
     # 关于进入 TTS 的文本预处理的设置
 
@@ -342,6 +378,7 @@ character_config:
     ignore_brackets: True # 从音频生成中删除中括号包住的内容
     ignore_parentheses: True # 从音频生成中删除括号包住的内容
     ignore_asterisks: True # 从音频生成中删除星号包住的内容(单双星号)
+    ignore_angle_brackets: True # 从音频生成中删除尖括号包住的内容
 
     translator_config:
       # 比如...你说话并阅读英语字幕，而 TTS 说日语之类的

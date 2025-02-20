@@ -1,11 +1,11 @@
 from typing import AsyncIterator, Tuple, Callable, List
 from functools import wraps
-from .output_types import Actions, SentenceOutput
+from .output_types import Actions, SentenceOutput, DisplayText
+from ..utils.tts_preprocessor import tts_filter as filter_text
 from ..live2d_model import Live2dModel
 from ..config_manager import TTSPreprocessorConfig
 from ..utils.sentence_divider import SentenceDivider
 from ..utils.sentence_divider import SentenceWithTags, TagState
-from ..utils.tts_preprocessor import tts_filter as filter_text
 from loguru import logger
 
 
@@ -36,6 +36,7 @@ def sentence_divider(
             token_stream = func(*args, **kwargs)
             async for sentence in divider.process_stream(token_stream):
                 yield sentence
+                logger.debug(f"sentence_divider: {sentence}")
 
         return wrapper
 
@@ -74,27 +75,28 @@ def actions_extractor(live2d_model: Live2dModel):
 def display_processor():
     """
     Decorator that processes text for display.
-    Handles think tag by adding parentheses.
     """
 
     def decorator(
         func: Callable[..., AsyncIterator[Tuple[SentenceWithTags, Actions]]],
-    ) -> Callable[..., AsyncIterator[Tuple[SentenceWithTags, str, Actions]]]:
+    ) -> Callable[..., AsyncIterator[Tuple[SentenceWithTags, DisplayText, Actions]]]:
         @wraps(func)
         async def wrapper(
             *args, **kwargs
-        ) -> AsyncIterator[Tuple[SentenceWithTags, str, Actions]]:
+        ) -> AsyncIterator[Tuple[SentenceWithTags, DisplayText, Actions]]:
             stream = func(*args, **kwargs)
 
             async for sentence, actions in stream:
-                display = sentence.text
+                text = sentence.text
                 # Handle think tag states
                 for tag in sentence.tags:
                     if tag.name == "think":
                         if tag.state == TagState.START:
-                            display = "("  # Start of think content
+                            text = "("
                         elif tag.state == TagState.END:
-                            display = ")"  # End of think content
+                            text = ")"
+
+                display = DisplayText(text=text)  # Simplified DisplayText creation
                 yield sentence, display, actions
 
         return wrapper
@@ -111,7 +113,9 @@ def tts_filter(
     """
 
     def decorator(
-        func: Callable[..., AsyncIterator[Tuple[SentenceWithTags, str, Actions]]],
+        func: Callable[
+            ..., AsyncIterator[Tuple[SentenceWithTags, DisplayText, Actions]]
+        ],
     ) -> Callable[..., AsyncIterator[SentenceOutput]]:
         @wraps(func)
         async def wrapper(*args, **kwargs) -> AsyncIterator[SentenceOutput]:
@@ -119,12 +123,11 @@ def tts_filter(
             config = tts_preprocessor_config or TTSPreprocessorConfig()
 
             async for sentence, display, actions in sentence_stream:
-                # Skip TTS for think tags and their content
                 if any(tag.name == "think" for tag in sentence.tags):
                     tts = ""
                 else:
                     tts = filter_text(
-                        text=display,
+                        text=display.text,
                         remove_special_char=config.remove_special_char,
                         ignore_brackets=config.ignore_brackets,
                         ignore_parentheses=config.ignore_parentheses,
@@ -132,8 +135,8 @@ def tts_filter(
                         ignore_angle_brackets=config.ignore_angle_brackets,
                     )
 
-                logger.debug(f"display: {display}")
-                logger.debug(f"tts: {tts}")
+                logger.debug(f"[{display.name}] display: {display.text}")
+                logger.debug(f"[{display.name}] tts: {tts}")
 
                 yield SentenceOutput(
                     display_text=display,

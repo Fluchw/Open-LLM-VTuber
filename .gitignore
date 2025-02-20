@@ -1,3 +1,6 @@
+# ignore the user configuration file
+conf.yaml
+
 # ignore non-default live2d models
 /live2d-models/*
 !/live2d-models/mao_pro
@@ -7,6 +10,8 @@
 /character-configs/*
 # but all of the defaults are already tracked, so no need to un-ignore them
 
+# ignore avatars
+avatars/*
 
 # macOS system files
 .DS_Store
@@ -58,3 +63,5 @@ openapi_memgpt.json
 # memory log
 mem.json
 conf.yaml.backup
+
+*.exe

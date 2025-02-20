@@ -98,28 +98,21 @@ This project underwent code refactoring after version `v1.0.0` and is currently 
 
 ## 🚀 Quick Start
 
-Read https://open-llm-vtuber.github.io/docs/quick-start for quick start. For pages that havn't yet received an English translation, please use your browser translation for now.
+Please refer to the [Quick Start](https://open-llm-vtuber.github.io/docs/quick-start) section in our documentation for installation.
 
 
 
 ## ☝ Update
 > :warning: `v1.0.0` has breaking changes and requires re-deployment. You *may* still update via the method below, but the `conf.yaml` file is incompatible and most of the dependencies needs to be reinstalled with `uv`. For those who came from versions before `v1.0.0`, I recommend deploy this project again with the [latest deployment guide](https://open-llm-vtuber.github.io/docs/quick-start).
 
-[To be complete]
+Please use `uv run update.py` to update if you installed any versions later than `v1.0.0`.
 
-Run the upgrade script `python upgrade.py` to update.
+## 😢 Uninstall  
+Most files, including Python dependencies and models, are stored in the project folder.
 
-or run the following command inside the project repository:
+However, models downloaded via ModelScope or Hugging Face may also be in `MODELSCOPE_CACHE` or `HF_HOME`. While we aim to keep them in the project's `models` directory, it's good to double-check.  
 
-```sh
-git stash push -u -m "Stashing all local changes"
-git fetch
-git pull
-git stash pop
-```
-
-
-
+Review the installation guide for any extra tools you no longer need, such as `uv`, `ffmpeg`, or `deeplx`.  
 
 # 🎉🎉🎉 Related Projects
 
@@ -131,14 +124,16 @@ git stash pop
 
 
 
-# Acknowledgement
-Awesome projects I learned from
+## 📜 Third-Party Licenses
 
-- https://github.com/dnhkng/GlaDOS
-- https://github.com/SchwabischesBauernbrot/unsuperior-ai-waifu
-- https://codepen.io/guansss/pen/oNzoNoz
-- https://github.com/Ikaros-521/AI-Vtuber
-- https://github.com/zixiiu/Digital_Life_Server
+### Live2D Sample Models Notice
+
+This project includes Live2D sample models provided by Live2D Inc. These assets are licensed separately under the Live2D Free Material License Agreement and the Terms of Use for Live2D Cubism Sample Data. They are not covered by the MIT license of this project.
+
+This content uses sample data owned and copyrighted by Live2D Inc. The sample data are utilized in accordance with the terms and conditions set by Live2D Inc. (See [Live2D Free Material License Agreement](https://www.live2d.jp/en/terms/live2d-free-material-license-agreement/) and [Terms of Use](https://www.live2d.com/eula/live2d-sample-model-terms_en.html)).
+
+Note: For commercial use, especially by medium or large-scale enterprises, the use of these Live2D sample models may be subject to additional licensing requirements. If you plan to use this project commercially, please ensure that you have the appropriate permissions from Live2D Inc., or use versions of the project without these models.
+
 
 
 

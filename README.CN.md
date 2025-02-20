@@ -97,28 +97,21 @@
 
 ## 🚀 快速上手
 
-请阅读 https://open-llm-vtuber.github.io/docs/quick-start 以快速开始。
+请阅读 [快速上手](https://open-llm-vtuber.github.io/docs/quick-start) 文档以安装项目。
 
 
 
 ## ☝ 更新
 > :warning: `v1.0.0` 版本有重大变更，需要重新部署。你*仍然可以*通过以下方法更新，但 `conf.yaml` 文件不兼容，并且大多数依赖项需要使用 `uv` 重新安装。如果你是准备从`v1.0.0`之前的版本升级到 `v1.0.0` 或之后的版本，建议按照[最新的部署指南](https://open-llm-vtuber.github.io/docs/quick-start)重新部署本项目。
 
-[待补充]
+如果你使用的是 `v1.0.0` 之后的版本，请运行更新脚本 `uv run upgrade.py` 进行更新。
 
-运行更新脚本 `python upgrade.py` 进行更新。
+## 😢 卸载
+大多数文件，包括Python依赖和模型，都存储在项目文件夹中，所以删除项目文件夹就十分足够了。
 
-或者在项目仓库中运行以下命令：
+然而，通过ModelScope或Hugging Face下载的模型可能也存在于`MODELSCOPE_CACHE`或`HF_HOME`中。虽然我们尽量将它们保存在项目的`models`目录中，但再次检查也无妨。
 
-```sh
-git stash push -u -m "Stashing all local changes"
-git fetch
-git pull
-git stash pop
-```
-
-
-
+查看安装指南中，你所安装但可能不再需要的任何额外工具，例如`uv`、`ffmpeg`或`deeplx`。
 
 # 🎉🎉🎉 相关项目
 
@@ -126,19 +119,15 @@ git stash pop
 - 你的 Live2D 桌面助手，由大语言模型 (LLM) 驱动！支持 Windows 和 macOS，它可以感知你的屏幕，检索剪贴板内容，并用独特的声音响应语音命令。具有语音唤醒、歌唱功能和完整的电脑控制，与你最喜欢的角色无缝交互。
 
 
+## 📜 第三方许可证
 
+### Live2D 样本模型声明
 
+本项目包含由 Live2D Inc. 提供的 Live2D 样本模型。这些资产根据 Live2D 免费素材许可协议和 Live2D Cubism 样本数据使用条款单独授权，不受本项目 MIT 许可证的约束。
 
+本内容使用由 Live2D Inc. 拥有并享有版权的样本数据。样本数据的使用符合 Live2D Inc. 制定的条款和条件。（参见 [Live2D 免费素材许可协议](https://www.live2d.jp/en/terms/live2d-free-material-license-agreement/) 和 [使用条款](https://www.live2d.com/eula/live2d-sample-model-terms_en.html)）。
 
-# 致谢
-我从中学习的优秀项目：
-
-- https://github.com/dnhkng/GlaDOS
-- https://github.com/SchwabischesBauernbrot/unsuperior-ai-waifu
-- https://codepen.io/guansss/pen/oNzoNoz
-- https://github.com/Ikaros-521/AI-Vtuber
-- https://github.com/zixiiu/Digital_Life_Server
-
+注意：对于商业用途，特别是对于中型或大型企业，使用这些 Live2D 样本模型可能需要额外的许可要求。如果您计划将本项目用于商业目的，请确保您已获得 Live2D Inc. 的适当许可，或使用不包含这些模型的项目版本。
 
 
 ## Star 历史

@@ -141,7 +141,7 @@ def comma_splitter(text: str) -> Tuple[str, str]:
     return text, ""
 
 
-def is_punctuation(text: str) -> bool:
+def has_punctuation(text: str) -> bool:
     """
     Check if the text is a punctuation mark.
 
@@ -151,7 +151,10 @@ def is_punctuation(text: str) -> bool:
     Returns:
         bool: Whether the text is a punctuation mark
     """
-    return text in COMMAS or text in END_PUNCTUATIONS
+    for punct in COMMAS + END_PUNCTUATIONS:
+        if punct in text:
+            return True
+    return False
 
 
 def contains_end_punctuation(text: str) -> bool:
@@ -521,38 +524,30 @@ class SentenceDivider:
 
         return result
 
-    async def process_stream(self, token_stream) -> AsyncIterator[SentenceWithTags]:
+    async def process_stream(self, segment_stream) -> AsyncIterator[SentenceWithTags]:
         """
         Process a stream of tokens and yield complete sentences with tag information.
+        pysbd may not able to handle ...
 
         Args:
-            token_stream: An async iterator yielding tokens
+            segment_stream: An async iterator yielding segments
 
         Yields:
             SentenceWithTags: Complete sentences with their tag information
         """
         self._full_response = []
-        last_token_was_punct = False
-        buffer_threshold = 25
 
-        async for token in token_stream:
-            self._buffer += token
-            self._full_response.append(token)
-
-            if is_punctuation(token):
-                last_token_was_punct = True
-                continue
+        async for segment in segment_stream:
+            self._buffer += segment
+            self._full_response.append(segment)
 
             # Process buffer after punctuation, when buffer gets too long,
             # or when we see a tag
-            should_process = (
-                last_token_was_punct
-                or len(self._buffer) >= buffer_threshold
-                or any(f"<{tag}" in self._buffer for tag in self.valid_tags)
-            )
+            should_process = any(
+                re.search(f"{tag}(?:/)?>", self._buffer) for tag in self.valid_tags
+            ) or has_punctuation(self._buffer)
 
             if should_process:
-                last_token_was_punct = False
                 sentences = await self._process_buffer()
                 for sentence in sentences:
                     yield sentence
